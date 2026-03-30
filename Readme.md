@@ -44,8 +44,15 @@ Structured data storage
 
 ---
 
+Kubernetes Deployment
+Multi-replica Flask app (2 pods)
+MariaDB deployed inside cluster
+Internal service communication via Kubernetes Service
+External access via NodePort (30000)
+
+---
+
 📈 Future Enhancements
-Kubernetes deployment
 CI/CD using Jenkins
 AI-based incident analysis
 Monitoring using Prometheus & Grafana
