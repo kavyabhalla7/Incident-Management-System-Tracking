@@ -1,99 +1,194 @@
-from flask import Flask, request, jsonify , render_template
-from datetime import datetime
-import json
+from flask import Flask, request, jsonify, render_template
+import mysql.connector
+import time
 
 app = Flask(__name__)
 
-# ✅ ADD IT HERE
+# -------------------------------
+# WAIT FOR DB (VERY IMPORTANT FOR DOCKER)
+# -------------------------------
+def wait_for_db():
+    while True:
+        try:
+            conn = mysql.connector.connect(
+                host="db",
+                user="root",
+                password="root"
+            )
+            conn.close()
+            print("✅ MySQL Ready!")
+            break
+        except:
+            print("⏳ Waiting for MySQL...")
+            time.sleep(2)
+
+wait_for_db()
+
+
+# -------------------------------
+# DATABASE CONNECTION
+# -------------------------------
+def get_db_connection():
+    return mysql.connector.connect(
+        host="db",
+        user="root",
+        password="root",
+        database="incidents_db"
+    )
+
+
+# -------------------------------
+# INITIALIZE DATABASE
+# -------------------------------
+def init_db():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS incidents (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        incident_id VARCHAR(20) UNIQUE,
+        service VARCHAR(255),
+        severity VARCHAR(50),
+        description TEXT,
+        status VARCHAR(50),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL
+    )
+    """)
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+init_db()
+
+
+# -------------------------------
+# HOME ROUTE
+# -------------------------------
 @app.route("/")
 def home():
-    return render_template('index.html')
+    return render_template("index.html")
 
-FILE = "incidents.json"
 
-def load_data():
-    try:
-        with open(FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
-
-def save_data(data):
-    with open(FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-# ✅ CREATE INCIDENT
+# -------------------------------
+# CREATE INCIDENT (FIXED)
+# -------------------------------
 @app.route("/incidents", methods=["POST"])
 def create_incident():
-    data = load_data()
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
     body = request.json
 
-    if data:
-        last_id = max(int(inc["id"].split("-")[1]) for inc in data)
-        incident_id = f"INC-{last_id + 1:03}"
-    else:
-        incident_id = "INC-001"
+    # safer ID generation
+    cursor.execute("SELECT MAX(id) as max_id FROM incidents")
+    result = cursor.fetchone()
+    next_id = (result["max_id"] or 0) + 1
 
-    incident = {
-        "id": incident_id,
-        "service": body["service"],
-        "severity": body["severity"],
-        "description": body["description"],
-        "status": "Open",
-        "created_at": str(datetime.now())
-    }
+    incident_id = f"INC-{next_id:03}"
 
-    data.append(incident)
-    save_data(data)
+    query = """
+    INSERT INTO incidents (incident_id, service, severity, description, status)
+    VALUES (%s, %s, %s, %s, %s)
+    """
 
-    return jsonify(incident), 201
+    values = (
+        incident_id,
+        body.get("service"),
+        body.get("severity"),
+        body.get("description"),
+        "Open"
+    )
+
+    cursor.execute(query, values)
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+
+    return jsonify({
+        "message": "Incident created",
+        "incident_id": incident_id
+    }), 201
 
 
-# ✅ GET ALL INCIDENTS
+# -------------------------------
+# GET ALL INCIDENTS
+# -------------------------------
 @app.route("/incidents", methods=["GET"])
 def get_incidents():
-    return jsonify(load_data())
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT * FROM incidents ORDER BY created_at DESC")
+    incidents = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+
+    return jsonify(incidents)
 
 
-# ✅ UPDATE INCIDENT
+# -------------------------------
+# UPDATE INCIDENT
+# -------------------------------
 @app.route("/incidents/<incident_id>", methods=["PUT"])
 def update_incident(incident_id):
-    data = load_data()
+    conn = get_db_connection()
+    cursor = conn.cursor(dictionary=True)
 
-    for inc in data:
-        if inc["id"] == incident_id:
-            body = request.json
+    body = request.json
 
-            if "status" in body:
-                inc["status"] = body["status"]
+    cursor.execute("SELECT * FROM incidents WHERE incident_id=%s", (incident_id,))
+    incident = cursor.fetchone()
 
-            if "severity" in body:
-                inc["severity"] = body["severity"]
+    if not incident:
+        return jsonify({"error": "Incident not found"}), 404
 
-            if "description" in body:
-                inc["description"] = body["description"]
+    status = body.get("status", incident["status"])
+    severity = body.get("severity", incident["severity"])
+    description = body.get("description", incident["description"])
 
-            inc["updated_at"] = str(datetime.now())
-            save_data(data)
+    query = """
+    UPDATE incidents 
+    SET status=%s, severity=%s, description=%s, updated_at=NOW()
+    WHERE incident_id=%s
+    """
 
-            return jsonify(inc)
+    cursor.execute(query, (status, severity, description, incident_id))
+    conn.commit()
 
-    return jsonify({"error": "Not found"}), 404
+    cursor.close()
+    conn.close()
+
+    return jsonify({"message": "Incident updated"})
 
 
-# ✅ DELETE INCIDENT
+# -------------------------------
+# DELETE INCIDENT
+# -------------------------------
 @app.route("/incidents/<incident_id>", methods=["DELETE"])
 def delete_incident(incident_id):
-    data = load_data()
+    conn = get_db_connection()
+    cursor = conn.cursor()
 
-    for inc in data:
-        if inc["id"] == incident_id:
-            data.remove(inc)
-            save_data(data)
-            return jsonify({"message": "Deleted"})
+    cursor.execute(
+        "DELETE FROM incidents WHERE incident_id=%s",
+        (incident_id,)
+    )
 
-    return jsonify({"error": "Not found"}), 404
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+
+    return jsonify({"message": "Incident deleted"})
 
 
+# -------------------------------
+# RUN APP
+# -------------------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
