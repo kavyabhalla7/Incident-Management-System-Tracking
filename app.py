@@ -11,7 +11,7 @@ def wait_for_db():
     while True:
         try:
             conn = mysql.connector.connect(
-                host="db",
+                host="mariadb-service",
                 user="root",
                 password="root"
             )
@@ -30,7 +30,7 @@ wait_for_db()
 # -------------------------------
 def get_db_connection():
     return mysql.connector.connect(
-        host="db",
+        host="mariadb-service",
         user="root",
         password="root",
         database="incidents_db"
