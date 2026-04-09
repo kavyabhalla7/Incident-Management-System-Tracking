@@ -14,6 +14,7 @@ spec:
     spec:
       containers:
       - name: incident-app
-        image: maitrayee30/incident-app:v1
+        image: incident-app:v3
+        imagePullPolicy: Never
         ports:
         - containerPort: 5000

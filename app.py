@@ -1,8 +1,11 @@
 from flask import Flask, request, jsonify, render_template
+from prometheus_client import Counter, generate_latest
+from flask import Response
 import mysql.connector
 import time
 
 app = Flask(__name__)
+REQUEST_COUNT = Counter('app_requests_total', 'Total HTTP Requests')
 
 # -------------------------------
 # WAIT FOR DB (VERY IMPORTANT FOR DOCKER)
@@ -69,7 +72,9 @@ init_db()
 # -------------------------------
 @app.route("/")
 def home():
+    REQUEST_COUNT.inc()
     return render_template("index.html")
+
 
 
 # -------------------------------
@@ -77,6 +82,7 @@ def home():
 # -------------------------------
 @app.route("/incidents", methods=["POST"])
 def create_incident():
+    REQUEST_COUNT.inc()
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -186,6 +192,12 @@ def delete_incident(incident_id):
 
     return jsonify({"message": "Incident deleted"})
 
+
+#--------------------------------------------------
+@app.route("/metrics")
+def metrics():
+    return Response(generate_latest(), mimetype='text/plain')
+#-------------------------------------------
 
 # -------------------------------
 # RUN APP

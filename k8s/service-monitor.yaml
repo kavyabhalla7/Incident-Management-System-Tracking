@@ -1,0 +1,14 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: incident-monitor
+  labels:
+    release: monitoring   # 👈 MUST MATCH HELM RELEASE
+spec:
+  selector:
+    matchLabels:
+      app: incident-app
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
